@@ -3,6 +3,8 @@ import six
 import base64
 import datetime
 import uuid
+import sys
+import os
 
 
 class DecryptByPublicKey(object):
@@ -12,11 +14,7 @@ class DecryptByPublicKey(object):
         再使用rsa公钥去解密传入的加密str
     """
     def __init__(self, activation_code_source, key_source, mode="str"):
-        if mode == "str":
-            self._activation_code = activation_code_source
-        elif mode == "file":
-            with open(activation_code_source) as f:
-                self._activation_code = f.read()
+        self._activation_code = activation_code_source
         self._key_source = key_source
         self._mode = mode
         # 使用公钥字符串求出模数和因子
@@ -51,6 +49,18 @@ class DecryptByPublicKey(object):
         # 从.pem文件中读取key
         try:
             with open(self._key_source) as f:
+                p = f.read()
+                self._pub_rsa_key = PublicKey.load_pkcs1(p.encode())
+        except Exception as error:
+            raise error
+
+    def _load_key_file_exe(self):
+        try:
+            if getattr(sys, 'frozen', False):  # 是否Bundle Resource
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.abspath(".")
+            with open(os.path.join(base_path, self._key_source)) as f:
                 p = f.read()
                 self._pub_rsa_key = PublicKey.load_pkcs1(p.encode())
         except Exception as error:
@@ -99,7 +109,7 @@ class DecryptByPublicKey(object):
             self._gen_modulus_exponent(self._key_source)
             self._gen_rsa_pubkey()
         elif self._mode == "file":
-            self._load_key_file()
+            self._load_key_file_exe()
         ret = self.decode()
         return ret
 
@@ -110,24 +120,40 @@ class DecryptByPublicKey(object):
 
     # 验证激活码
     def validity(self):
-        mess_list = self.decrypt().split('&')
-        mac = self.get_mac_address()
-        if mac == mess_list[0]:
-            if datetime.datetime.strptime(mess_list[1], '%Y-%m-%d') > datetime.datetime.now():
-                return True
+        try:
+            if self._mode == "file":
+                with open(self._activation_code) as f:
+                    self._activation_code = f.read()
+            mess_list = self.decrypt().split('&')
+            mac = self.get_mac_address()
+            if mac == mess_list[0]:
+                if datetime.datetime.strptime(mess_list[1], '%Y/%m/%d') > datetime.datetime.now():
+                    return True
+                else:
+                    print("激活码已过期，请重新获取!")
+                    return False
             else:
-                print("激活码已过期，请重新获取!")
+                print("设备验证未通过")
                 return False
-        else:
-            print("设备验证未通过")
+        except Exception as error:
+            print("error:", error)
             return False
 
 
 if __name__ == "__main__":
     # Base64格式的激活码，包含注册信息和有效期
-    activation_code = """"""
+    activation_code = """IxW51GtFl+tyaGaJmOxTsHccSkYJ7t6dt9bzxVC45qrsvmJ8FbryKJTRA9keDGAiU2g7fk8JaVub
+HPt/Efjue0U3Un4KjC1s9rhMgJkRnJ4dzvRvME2IeXNXACOuLqkQlq7gUMI6LriAHzcHQGQCb9E9
+wiqVJCGTAzsPj5DUC/8MNCWGzeEBihHno6hlPwQa2btnA+Scd4ax+QvSXzuAJE7jQGxfRvIAtFNR
+ZsjUp1i0IM5i7hYUCFtbUwLfe+qE8KRuv10TF1y3OZkGSyrotzydGZfaTqePTHawnfU31TTfG3Uq
+Y2xWXg0L0X36k99cJ0ubM1tm4F6FOwdUDKaqQA=="""
     # Base64格式的公钥
-    publickey_base64 = """"""
+    publickey_base64 = """MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhYTLtE17h/MCghuNgNzCcCN77qPuonhv
+EITRYw6fvJC0kNqjl9recncwsSPMWyzptj3y4O0C0rIYaZIMeDiGJYkaqz4caZ2i2xA5azmfwKjG
+V01FejkIdiAzIh27z7k5xiYaTP8eKvz6Psb+DIR/3Lgo7gpFqR6acmsakL3v/I4dvMAJqqV2Ocyb
+oeQ32ffiYBRuBX4/cZweyINg4piE7Ud7hfSYMpYLQBQMvLzqjtJ6ukZIoXKtS/jIdBJrbcxYM/0w
+gm9/j+4BrF440XCs37NHZT1oQMqa+dk/vmwuQmBhMgzQc9FI3XRCvhMONF+EuG8RiJTq2ZodWBxi
+8GM2wwIDAQAB"""
     # 返回值为真即验证通过
     result = DecryptByPublicKey("ActivationCode.txt", "public.pem", mode="file").validity()
     if result:
